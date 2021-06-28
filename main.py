@@ -39,9 +39,11 @@ for x in [a, b, c]:
 	print(x.mac)
 
 s1 = Switch('sw1', ports=4)
+s2 = Switch('sw1', ports=4)
 
 Cable(a.ports[0], s1.ports[0])
-Cable(b.ports[0], s1.ports[1])
+Cable(b.ports[0], s2.ports[1])
+Cable(s1.ports[2], s2.ports[2])
 
 while True:
 	x = input('data: ')
