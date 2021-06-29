@@ -232,8 +232,6 @@ class L3Device(L2Device):
 		for handler in handlers:
 			handler(interface, data)
 
-		return True if handlers else False
-
 	def ping(self, ip: IP, icmp_id=0, icmp_seq=0, data=None):
 		route = self.find_route(ip)
 

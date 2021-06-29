@@ -32,7 +32,7 @@ class Router(L3Device):
 		if interface is None:
 			return  # no interface configured on this port?
 
-		if interface.ip == packet.dest:
+		if interface.ip == packet.dest and interface.ip in self.nat_interfaces:
 			# handle the packet internally if routed to interface
 			self.handle_packet(interface, packet)
 		else:
