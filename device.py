@@ -21,6 +21,8 @@ class L2Device:
 		self.mac = MAC.random()
 		self.ports = [Port(partial(self.recv_frame, port_number)) for port_number in range(ports)]
 
+		log.info('created %s with %s', self.name, self.mac)
+
 	def __repr__(self):
 		return f'<{self.name} mac={self.mac} ports={len(self.ports)}>'
 
@@ -122,6 +124,8 @@ class L3Device(L2Device):
 				payload=reply
 			)
 
+			log.info('%s: doing arp reply to %s', self.name, packet.spa)
+
 			self.send_frame(port, frame)
 
 		elif packet.operation == ARPOperation.REPLY:
@@ -146,7 +150,7 @@ class L3Device(L2Device):
 			payload=packet,
 		)
 
-		log.info('%s: arp request for %s on port %s', self.name, dest_ip, port)
+		# log.info('%s: arp request for %s on port %s', self.name, dest_ip, port)
 
 		self.ports[port].send_frame(frame)
 		self.arp_wait[dest_ip] = Event()
@@ -160,7 +164,7 @@ class L3Device(L2Device):
 
 			self.rib.append(Route(interface.network, interface.mask, None, interface.ip))
 
-	def find_route(self, ip):
+	def find_route(self, ip) -> Route:
 		preferred = None
 		current_specificity = None
 
@@ -184,8 +188,8 @@ class L3Device(L2Device):
 
 		return preferred
 
-	def forward_packet(self, packet: IPPacket):
-		route = self.find_route(packet.dest)
+	def forward_packet(self, packet: IPPacket, route=None):
+		route = route or self.find_route(packet.dest)
 
 		if route and route.gateway is not None:
 			# if we have a route and it has a gateway, use that as the arp ip
@@ -233,15 +237,22 @@ class L3Device(L2Device):
 		for handler in handlers:
 			handler(interface, data)
 
-	def ping(self, interface, ip: IP, icmp_id=0, icmp_seq=0, data=None):
+		return True if handlers else False
+
+	def ping(self, ip: IP, icmp_id=0, icmp_seq=0, data=None):
+		route = self.find_route(ip)
+
+		if route is None:
+			return
+
 		packet = IPPacket(
 			dest=ip,
-			source=interface.ip,
+			source=self.get_interface(route.interface).ip,
 			protocol=Protocol.ICMP,
 			data=ICMPPacket(ICMPType.ECHO, 0, dict(icmp_id=icmp_id, icmp_seq=icmp_seq), data),
 		)
 
-		self.forward_packet(packet)
+		self.forward_packet(packet, route)
 
 	@proto_handler(Protocol.ICMP)
 	def handle_icmp(self, interface, icmp: ICMPPacketMeta):

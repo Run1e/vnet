@@ -11,13 +11,13 @@ from router import Router
 logging.basicConfig(format='[%(name)s] %(message)s', level=logging.DEBUG)
 log = logging.getLogger()
 
-n1 = L3Device('a', 1)
+n1 = L3Device('n1', 1)
 n1.add_interface(0, '192.168.1.10', 24, '192.168.1.1')
 
-n2 = L3Device('b', 1)
+n2 = L3Device('n2', 1)
 n2.add_interface(0, '192.168.1.20', 24, '192.168.1.1')
 
-r1 = Router('r', 4)
+r1 = Router('r1', 4)
 r1.add_interface(0, '1.0.0.0', 0, None)  # WAN
 r1.add_interface(1, '192.168.1.1', 24, None)  # LAN
 r1.add_nat('192.168.1.1')
@@ -39,8 +39,9 @@ async def main():
 
 	seq = 1
 	while True:
-		#a.ping(a.get_interface('192.168.1.10'), IP('192.168.1.20'), 0, seq)
-		n1.ping(n1.get_interface('192.168.1.10'), IP('1.1.1.1'), 0, seq)
+		#n1.ping(IP('1.1.1.1'), 0, seq)
+		#o.ping(IP('1.0.0.0'), 0, seq)
+		r1.ping(IP('1.1.1.1'), 0, seq)
 		seq += 1
 		await asyncio.sleep(1.0)
 

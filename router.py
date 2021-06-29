@@ -32,9 +32,10 @@ class Router(L3Device):
 		if interface is None:
 			return  # no interface configured on this port?
 
-		self.handle_packet(interface, packet)
+		if not self.handle_packet(interface, packet):
+			self.handle_routing(interface, packet)
 
-	def handle_packet(self, interface, packet: IPPacket):
+	def handle_routing(self, interface, packet: IPPacket):
 		# here we need to find outgoing interface
 		# add hash to nat table
 		# change values in the IP header
@@ -64,7 +65,7 @@ class Router(L3Device):
 		# change packet source to the WAN interface ip
 		packet.source = route.interface
 
-		self.forward_packet(packet)
+		self.forward_packet(packet, route)
 
 	def handle_incoming_nat(self, interface, packet):
 		identifier = (packet.protocol, packet.source, self.get_packet_nat_identifier(packet))
