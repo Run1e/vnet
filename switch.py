@@ -1,7 +1,7 @@
 import logging
 
 from device import L2Device
-from address import MACAddress
+from address import MAC
 
 log = logging.getLogger(__name__)
 
@@ -14,8 +14,8 @@ class Switch(L2Device):
 
 	def recv_frame(self, port, frame):
 		# we never store the broadcast mac address
-		if frame.source != MACAddress.broadcast() and frame.source not in self.cam:
-			log.info('%s learned %s on port %s', self.name, frame.source, port)
+		if frame.source != MAC.broadcast() and frame.source not in self.cam:
+			#log.info('%s: ARP (cam) learned %s on port %s', self.name, frame.source, port)
 			self.cam[frame.source] = port
 
 		# broadcast will always flood since it's never learned

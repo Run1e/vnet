@@ -1,4 +1,8 @@
-from address import IPAddress
+from collections import namedtuple
+
+from address import IP
+
+Route = namedtuple('Route', 'destination netmask gateway interface')
 
 
 class Frame:
@@ -23,8 +27,20 @@ class IPPacket:
 
 
 class ICMPPacket:
-	def __init__(self, tos, code):
-		pass
+	def __init__(self, type, code, header, data):
+		self.type = type
+		self.code = code
+		self.header = header
+		self.data = data
+
+
+class ICMPPacketMeta:
+	def __init__(self, ttl, protocol, source, dest, icmp):
+		self.ttl = ttl
+		self.protocol = protocol
+		self.source = source
+		self.dest = dest
+		self.icmp: ICMPPacket = icmp
 
 
 class TCPSegment:
@@ -51,6 +67,8 @@ class Interface:
 		self.port = port
 		self.ip = ip
 		self.mask = mask
-		self.network = IPAddress(ip.value & mask.value)
+		self.network = IP(ip.value & mask.value)
 		self.gateway = gateway
 
+	def __repr__(self):
+		return f'<Interface ip={self.ip} port={self.port}>'

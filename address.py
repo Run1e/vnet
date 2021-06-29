@@ -8,15 +8,25 @@ class BaseAddress:
 		return hash(self.value)
 
 	def __eq__(self, other):
-		if isinstance(other, BaseAddress):
-			other = other.value
 		return self.value == other
 
 	def __ne__(self, other):
 		return not self.__eq__(other)
 
+	def __lt__(self, other):
+		return self.value < other.value
 
-class MACAddress(BaseAddress):
+	def __le__(self, other):
+		return self.value <= other.value
+
+	def __gt__(self, other):
+		return self.value > other.value
+
+	def __ge__(self, other):
+		return self.value >= other.value
+
+
+class MAC(BaseAddress):
 	def __init__(self, mac):
 		if isinstance(mac, str):
 			self.value = utils.mac_to_bin(mac)
@@ -37,7 +47,7 @@ class MACAddress(BaseAddress):
 		return f'<MAC {utils.bin_to_mac(self.value)}>'
 
 
-class IPAddress(BaseAddress):
+class IP(BaseAddress):
 	def __init__(self, ip):
 		if isinstance(ip, str):
 			self.value = utils.ip_to_bin(ip)
