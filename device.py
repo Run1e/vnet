@@ -177,12 +177,7 @@ class L3Device(L2Device):
 				continue
 
 			# set this as preferred if none chosen yet
-			if preferred is None:
-				preferred = route
-				current_specificity = mask
-				continue
-
-			if current_specificity < mask:
+			if preferred is None or current_specificity < mask:
 				preferred = route
 				current_specificity = mask
 
