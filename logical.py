@@ -1,3 +1,6 @@
+from address import IPAddress
+
+
 class Frame:
 	def __init__(self, dest, source, ethertype, payload):
 		self.dest = dest
@@ -9,7 +12,7 @@ class Frame:
 		return f'<Frame dest={self.dest} source={self.source}>'
 
 
-class Packet:
+class IPPacket:
 	# also called an IP datagram in some cases
 	def __init__(self, dest, source, data, ttl=8):
 		self.dest = dest
@@ -25,3 +28,23 @@ class TCPSegment:
 		self.seq_number = seq_number
 		self.ack_number = ack_number
 		self.data = data
+
+
+class ARPPacket:
+	def __init__(self, ptype, operation, sha, spa, tha, tpa):
+		self.ptype = ptype
+		self.operation = operation
+		self.sha = sha
+		self.spa = spa
+		self.tha = tha
+		self.tpa = tpa
+
+
+class Interface:
+	def __init__(self, port, ip, mask, gateway):
+		self.port = port
+		self.ip = ip
+		self.mask = mask
+		self.network = IPAddress(ip.value & mask.value)
+		self.gateway = gateway
+
