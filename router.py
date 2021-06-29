@@ -32,7 +32,11 @@ class Router(L3Device):
 		if interface is None:
 			return  # no interface configured on this port?
 
-		if not self.handle_packet(interface, packet):
+		if interface.ip == packet.dest:
+			# handle the packet internally if routed to interface
+			self.handle_packet(interface, packet)
+		else:
+			# otherwise, we wanna NAT
 			self.handle_routing(interface, packet)
 
 	def handle_routing(self, interface, packet: IPPacket):

@@ -40,8 +40,8 @@ async def main():
 	seq = 1
 	while True:
 		#n1.ping(IP('1.1.1.1'), 0, seq)
-		#o.ping(IP('1.0.0.0'), 0, seq)
-		r1.ping(IP('1.1.1.1'), 0, seq)
+		o.ping(IP('1.0.0.0'), 0, seq)
+		#r1.ping(IP('1.1.1.1'), 0, seq)
 		seq += 1
 		await asyncio.sleep(1.0)
 
