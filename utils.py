@@ -3,6 +3,14 @@ IPv4_MAX = 2 ** 32 - 1
 MAC_SHIFTS = [40, 32, 24, 16, 8, 0]
 
 
+def proto_handler(proto):
+	def wrapper(func):
+		func.__proto__ = proto
+		return func
+
+	return wrapper
+
+
 def mac_to_bin(mac: str):
 	octets = [int(octet, 16) for octet in mac.split(':')]
 

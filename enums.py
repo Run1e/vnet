@@ -9,3 +9,13 @@ class EtherType(Enum):
 class ARPOperation(Enum):
 	REQUEST = 1
 	REPLY = 2
+
+
+class Protocol(Enum):
+	ICMP = 1
+	TCP = 6
+
+
+class ICMPType(Enum):
+	ECHO_REPLY = 0
+	ECHO = 8

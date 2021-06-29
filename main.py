@@ -1,30 +1,22 @@
 import asyncio
 import logging
 
-from device import L2Device, L3Device
-from logical import Frame, IPAddress, IPPacket
+from device import L3Device
+from logical import IPAddress, IPPacket
 from physical import Cable
 from switch import Switch
+from enums import Protocol
+from utils import proto_handler
 
 logging.basicConfig(format='[%(name)s] %(message)s', level=logging.DEBUG)
 log = logging.getLogger()
-
-
-class L2Node(L2Device):
-	def __init__(self, name):
-		super().__init__(name=name, ports=1)
-
-	def handle_frame(self, port, frame):
-		log.info('%s received payload: %s', self.name, frame.payload)
-		if frame.source == a.mac and self.mac == b.mac:
-			self.send_frame(0, Frame(a.mac, self.mac, 0, 'hello from b!'))
 
 
 class L3Node(L3Device):
 	def __init__(self, name):
 		super().__init__(name=name, ports=1)
 
-	def handle_packet(self, interface, packet: IPPacket):
+	def asd(self, interface, packet: IPPacket):
 		print(interface.ip, packet.source, packet.data)
 
 		if self.name == 'a':
@@ -34,6 +26,10 @@ class L3Node(L3Device):
 		elif self.name == 'c':
 			packet = IPPacket(dest=IPAddress('192.168.1.10'), source=packet.dest, data='hi from c!')
 		self.send_packet(packet)
+
+	@proto_handler(Protocol.ICMP)
+	def handle_icmp(self, interface, packet):
+		print('icmp', packet)
 
 
 a = L3Node('a')
@@ -61,6 +57,7 @@ async def main():
 	packet = IPPacket(
 		IPAddress('192.168.1.20'),
 		IPAddress('192.168.1.10'),
+		Protocol.ICMP,
 		'ping!',
 	)
 

@@ -14,11 +14,17 @@ class Frame:
 
 class IPPacket:
 	# also called an IP datagram in some cases
-	def __init__(self, dest, source, data, ttl=8):
+	def __init__(self, dest, source, protocol, data, ttl=8):
 		self.dest = dest
 		self.source = source
+		self.protocol = protocol
 		self.data = data
 		self.ttl = ttl
+
+
+class ICMPPacket:
+	def __init__(self, tos, code):
+		pass
 
 
 class TCPSegment:
