@@ -1,6 +1,8 @@
 import asyncio
 import logging
 
+from random import randint
+
 from pprint import pprint
 from device import L3Device
 from logical import *
@@ -37,11 +39,15 @@ async def main():
 	Cable(n2.ports[0], s1.ports[2])
 	#Cable(s1.ports[2], s3.ports[2])
 
+	p1 = randint(0, 100)
+	p2 = randint(100, 200)
+
 	seq = 1
 	while True:
-		n1.ping(IP('1.1.1.1'), 0, seq)
-		#o.ping(IP('1.0.0.0'), 0, seq)
-		#r1.ping(IP('1.1.1.1'), 0, seq)
+		n1.ping(IP('1.1.1.1'), p1, seq)
+		#r1.ping(IP('1.1.1.1'), p2, seq)
+		#o.ping(IP('1.0.0.0'), p2, seq)
+		#o.ping(IP('192.168.1.10'), p2, seq)
 		seq += 1
 		await asyncio.sleep(1.0)
 

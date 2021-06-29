@@ -1,9 +1,8 @@
 import logging
-from collections import defaultdict
 
 from device import L3Device
-from logical import IPPacket, Interface, ICMPPacket, IP
 from enums import Protocol
+from logical import ICMPPacket, IP, IPPacket
 
 log = logging.getLogger(__name__)
 
@@ -24,62 +23,41 @@ class Router(L3Device):
 			return data.header['icmp_id']
 
 	def recv_packet(self, port, packet: IPPacket):
-		interface = None
-		for interface in self.interfaces.values():
-			if interface.port == port:
-				break
+		interface = self.get_interface(packet.dest)
 
-		if interface is None:
-			return  # no interface configured on this port?
+		if interface is not None:
+			# this packet is addressed to this router
 
-		if interface.ip == packet.dest and interface.ip in self.nat_interfaces:
-			# handle the packet internally if routed to interface
-			self.handle_packet(interface, packet)
+			identifier = (packet.protocol, packet.source, self.get_packet_nat_identifier(packet))
+			dest = self.nat.get(identifier, None)
+			if dest is None:
+				# no nat match found, this packet is for the router
+				self.handle_packet(interface, packet)
+			else:
+				# nat match found, this packet is an inbound NAT packet
+				packet.dest = dest
+				self.forward_packet(packet)
+
 		else:
-			# otherwise, we wanna NAT
-			self.handle_routing(interface, packet)
+			# this packet is *not* addressed to this router
 
-	def handle_routing(self, interface, packet: IPPacket):
-		# here we need to find outgoing interface
-		# add hash to nat table
-		# change values in the IP header
-		# and send to that outgoing interface
+			# check if we have an interface on this port
+			# this will be default gw in that case
+			interface = None
+			for interface in self.interfaces.values():
+				if interface.port == port:
+					break
 
-		if interface.ip in self.nat_interfaces:
-			self.handle_outgoing_nat(interface, packet)
-		else:  # should probably be some predicate here
-			self.handle_incoming_nat(interface, packet)
+			if interface is None or interface.ip not in self.nat_interfaces:
+				return  # no interface configured on this port, or this interface is not an interface with NAT enabled
 
-	def handle_outgoing_nat(self, interface, packet):
-		route = self.find_route(packet.dest)
+			route = self.find_route(packet.dest)
+			if route is None:
+				return  # no valid route
 
-		if route is None:
-			return  # no valid route
+			# add entry to nat table
+			identifier = (packet.protocol, packet.dest, self.get_packet_nat_identifier(packet))
+			self.nat[identifier] = packet.source
 
-		# find nat identifier for this packet
-		# this is done in a dumb way but it's fine for this limited purpose
-		# it should really be "bit-aligned"
-		identifier = (packet.protocol, packet.dest, self.get_packet_nat_identifier(packet))
-
-		# add entry to nat table
-		self.nat[identifier] = packet.source
-
-		#log.info('%s: outgoing nat source %s changed to %s on %s', self.name, packet.source, route.interface, route)
-
-		# change packet source to the WAN interface ip
-		packet.source = route.interface
-
-		self.forward_packet(packet, route)
-
-	def handle_incoming_nat(self, interface, packet):
-		identifier = (packet.protocol, packet.source, self.get_packet_nat_identifier(packet))
-
-		dest = self.nat.get(identifier, None)
-		if dest is None:
-			return  # can't find entry in nat table
-
-		#log.info('%s: incoming nat dest %s changed to %s', self.name, packet.dest, dest)
-
-		packet.dest = dest
-
-		self.forward_packet(packet)
+			packet.source = route.interface
+			self.forward_packet(packet, route)

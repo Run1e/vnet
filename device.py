@@ -1,5 +1,5 @@
 import logging
-from asyncio import Event, create_task
+from asyncio import Event, create_task, wait_for, TimeoutError
 from collections import defaultdict
 from functools import partial
 from inspect import getmembers
@@ -203,7 +203,10 @@ class L3Device(L2Device):
 
 			async def wait_and_resend():
 				event = self.arp_wait[arp_ip]
-				await event.wait()
+				try:
+					await wait_for(event.wait(), timeout=5.0)
+				except TimeoutError:
+					return
 				self.forward_packet(packet)
 
 			create_task(wait_and_resend())
