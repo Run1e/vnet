@@ -58,10 +58,7 @@ class IP(BaseAddress):
 
 	@classmethod
 	def from_cidr(cls, cidr):
-		return cls(utils.mask_from_cidr(cidr))
-
-	def in_subnet(self, network, mask):
-		return utils.in_subnet(network, mask, self.value)
+		return cls(2 ** cidr - 1 << (32 - cidr))
 
 	def __repr__(self):
 		return f'<IP {utils.bin_to_ip(self.value)}>'

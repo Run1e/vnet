@@ -50,7 +50,3 @@ def bin_to_ip(bits: int):
 
 def in_subnet(network, mask, ip):
 	return network <= ip <= network | IPv4_MAX - mask
-
-
-def mask_from_cidr(cidr):
-	return 2 ** cidr - 1 << (32 - cidr)
