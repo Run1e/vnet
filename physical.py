@@ -1,4 +1,5 @@
 from asyncio import create_task, sleep
+from copy import deepcopy
 from random import random, randint
 
 
@@ -13,6 +14,8 @@ class Port:
 		return bool(self.cable)
 
 	def plug(self, cable):
+		if self.connected:
+			raise ValueError('Port is already connected!')
 		self.cable = cable
 
 	def send_frame(self, frame):
@@ -26,13 +29,13 @@ class Port:
 
 
 class Cable:
-	def __init__(self, a, b, delay_min=50, delay_max=200, drop_chance=0.0):
+	def __init__(self, a, b, delay_min=10, delay_max=50, loss=0.0):
 		self.a = a
 		self.b = b
 
 		self.delay_min = delay_min
 		self.delay_max = delay_max
-		self.drop_chance = drop_chance
+		self.loss = loss
 
 		self.a.plug(self)
 		self.b.plug(self)
@@ -40,10 +43,11 @@ class Cable:
 	async def send(self, from_port, frame):
 		other = self.b if from_port is self.a else self.a
 
-		if random() < self.drop_chance:
+		if random() < self.loss:
 			return
 
 		delay = randint(self.delay_min, self.delay_max) / 1000
 		await sleep(delay)
 
-		other.recv_frame(frame)
+		# send a copy of the frame over the cable
+		other.recv_frame(deepcopy(frame))

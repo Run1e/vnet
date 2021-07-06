@@ -1,5 +1,5 @@
 import logging
-from asyncio import Event, create_task, wait_for, TimeoutError
+from asyncio import Event, create_task, wait_for, TimeoutError, sleep, CancelledError
 from collections import defaultdict
 from functools import partial
 from inspect import getmembers
@@ -14,6 +14,9 @@ from utils import proto_handler, in_subnet
 log = logging.getLogger(__name__)
 
 
+ARP_CACHE_CLEAR_TIMER = 10.0
+
+
 class L2Device:
 	def __init__(self, name, ports):
 		self.name = name
@@ -21,7 +24,7 @@ class L2Device:
 		self.mac = MAC.random()
 		self.ports = [Port(partial(self.recv_frame, port_number)) for port_number in range(ports)]
 
-		log.info('created %s with %s', self.name, self.mac)
+		log.debug('created %s with %s', self.name, self.mac)
 
 	def __repr__(self):
 		return f'<{self.name} mac={self.mac} ports={len(self.ports)}>'
@@ -41,7 +44,7 @@ class L2Device:
 
 	def recv_frame(self, port, frame):
 		if frame.dest != self.mac and frame.dest != MAC.broadcast():
-			log.info('%s received frame with wrong mac: %s', self.name, frame.dest)
+			log.warning('%s received frame with wrong mac: %s', self.name, frame.dest)
 			return
 
 		self.handle_frame(port, frame)
@@ -54,10 +57,11 @@ class L3Device(L2Device):
 	def __init__(self, name, ports):
 		super().__init__(name, ports)
 
-		self.interfaces = dict()  # {ip: interface}
+		self.interfaces = {port: dict() for port in range(ports)}  # {port {ip: interface}}
 		self.rib = list()  # List[tuple]
 		self.arp = dict()  # {ip: (mac, port)}
 		self.arp_wait = dict()  # {ip: Event}
+		self.arp_clearer = dict()  # {mac: task}
 
 		self.proto_handlers = defaultdict(list)  # {proto: List[callable]}
 
@@ -66,7 +70,7 @@ class L3Device(L2Device):
 				proto = f.__proto__
 				self.proto_handlers[proto].append(f)
 
-	def add_interface(self, port, ip, cidr, gateway):
+	def add_interface(self, port, ip, cidr, gateway, wan=False, nat=False):
 		ip = IP(ip)
 		mask = IP.from_cidr(cidr)
 		gateway = None if gateway is None else IP(gateway)
@@ -74,12 +78,29 @@ class L3Device(L2Device):
 		if ip in self.interfaces:
 			raise ValueError(f'Duplicate interface (IP already assigned) {ip}')
 
-		self.interfaces[ip] = Interface(port, ip, mask, gateway)
-
+		self.interfaces[port][ip] = Interface(port, ip, mask, gateway, wan, nat)
 		self.update_rib()
 
 	def get_interface(self, ip):
-		return self.interfaces.get(ip if isinstance(ip, IP) else IP(ip), None)
+		for port, port_interfaces in self.interfaces.items():
+			for int_ip, interface in port_interfaces.items():
+				if ip == int_ip:
+					return interface
+
+		return None
+
+	def update_rib(self):
+		self.rib = list()
+
+		for port, port_interfaces in self.interfaces.items():
+			for ip, interface in port_interfaces.items():
+				if interface.gateway:
+					self.add_route(Route(IP('0.0.0.0'), IP('0.0.0.0'), interface.gateway, interface.ip))
+
+				self.add_route(Route(interface.network, interface.mask, None, interface.ip))
+
+	def add_route(self, route):
+		self.rib.append(route)
 
 	def handle_frame(self, port, frame: Frame):
 		if frame.ethertype == EtherType.IP:  # IPv4 packet
@@ -88,9 +109,10 @@ class L3Device(L2Device):
 			self.recv_arp(port, frame.payload)
 
 	def recv_packet(self, port, packet: IPPacket):
-		interface = self.interfaces.get(packet.dest, None)
+		interface = self.interfaces[port].get(packet.dest, None)
 
-		if interface is None or interface.port != port:
+		if interface is None:
+			log.warning('%s: packet addressed to non-existent interface: %s', self.name, packet.dest)
 			return
 
 		self.handle_packet(interface, packet)
@@ -100,11 +122,24 @@ class L3Device(L2Device):
 			return
 
 		# add to our own arp table first, as per the RFC
-		log.info('%s: ARP learned %s -> %s', self.name, packet.spa, packet.sha)
+		log.debug('%s: ARP learned %s -> %s', self.name, packet.spa, packet.sha)
 		self.arp[packet.spa] = (packet.sha, port)
 
+		async def wait_and_clear_arp():
+			await sleep(ARP_CACHE_CLEAR_TIMER)
+			self.arp.pop(packet.spa, None)
+
+		clearer = self.arp_clearer.get(packet.spa, None)
+		if clearer is not None:
+			try:
+				clearer.cancel()
+			except CancelledError:
+				pass
+
+		self.arp_clearer[packet.spa] = create_task(wait_and_clear_arp())
+
 		if packet.operation == ARPOperation.REQUEST:
-			interface = self.interfaces.get(packet.tpa, None)
+			interface = self.interfaces[port].get(packet.tpa, None)
 			if interface is None:
 				return
 
@@ -124,7 +159,7 @@ class L3Device(L2Device):
 				payload=reply
 			)
 
-			log.info('%s: doing arp reply to %s', self.name, packet.spa)
+			log.debug('%s: doing arp reply to %s', self.name, packet.spa)
 
 			self.send_frame(port, frame)
 
@@ -133,7 +168,7 @@ class L3Device(L2Device):
 			if event is not None:
 				event.set()
 
-	def arp_request(self, source_ip, port, dest_ip):
+	def arp_resolve(self, source_ip, port, dest_ip):
 		packet = ARPPacket(
 			ptype=EtherType.IP,
 			operation=ARPOperation.REQUEST,
@@ -150,21 +185,12 @@ class L3Device(L2Device):
 			payload=packet,
 		)
 
-		# log.info('%s: arp request for %s on port %s', self.name, dest_ip, port)
+		log.debug('%s: arp request for %s on port %s', self.name, dest_ip, port)
 
 		self.ports[port].send_frame(frame)
 		self.arp_wait[dest_ip] = Event()
 
-	def update_rib(self):
-		self.rib = list()
-
-		for idx, (ip, interface) in enumerate(self.interfaces.items()):
-			if idx == 0:  # dumb way of doing this, will break with several interfaces
-				self.rib.append(Route(IP('0.0.0.0'), IP('0.0.0.0'), interface.gateway, interface.ip))
-
-			self.rib.append(Route(interface.network, interface.mask, None, interface.ip))
-
-	def find_route(self, ip) -> Route:
+	def route_lookup(self, ip) -> Route:
 		preferred = None
 		current_specificity = None
 
@@ -183,44 +209,50 @@ class L3Device(L2Device):
 
 		return preferred
 
-	def forward_packet(self, packet: IPPacket, route=None):
-		route = route or self.find_route(packet.dest)
+	def route_packet(self, packet):
+		route = self.route_lookup(packet.dest)
 
-		if route and route.gateway is not None:
-			# if we have a route and it has a gateway, use that as the arp ip
-			arp_ip = route.gateway
-		else:
-			# otherwise just use the packet destination as arp ip
-			arp_ip = packet.dest
+		if route is None:
+			return
 
+		self.forward_packet(route.interface, packet, next_hop=route.gateway)
+
+	def forward_packet(self, interface, packet: IPPacket, next_hop=None):
+		arp_ip = next_hop or packet.dest
 		arp_entry = self.arp.get(arp_ip, None)
 
 		if arp_entry is None:
-			# does this need a check?
-			interface = self.interfaces.get(packet.source, None)
+			interface = self.get_interface(interface)
+			if interface is None:
+				return
 
-			self.arp_request(packet.source, interface.port, arp_ip)
+			self.arp_resolve(packet.source, interface.port, arp_ip)
 
 			async def wait_and_resend():
 				event = self.arp_wait[arp_ip]
+
+				# wait a maximum of 5 seconds for the arp reply
+				# if nothing within that time, the packet is dropped
 				try:
 					await wait_for(event.wait(), timeout=5.0)
 				except TimeoutError:
+					log.warning('%s: dropping packet, no arp reply', self.name)
 					return
-				self.forward_packet(packet)
+
+				self.forward_packet(interface, packet, next_hop)
 
 			create_task(wait_and_resend())
 			return
 
 		dest_mac, dest_port = arp_entry
 
-		# log.info('%s: forwarding packet for %s to %s', self.name, packet.dest, arp_ip)
+		log.info('%s: forwarding packet for %s to %s', self.name, packet.dest, arp_ip)
 
 		frame = Frame(dest=dest_mac, source=self.mac, ethertype=EtherType.IP, payload=packet)
 		self.send_frame(dest_port, frame)
 
 	def handle_packet(self, interface, packet: IPPacket):
-		# log.info('%s: received packet from %s with proto %s', self.name, packet.source, packet.protocol)
+		log.info('%s: received packet from %s with proto %s', self.name, packet.source, packet.protocol)
 
 		proto = packet.protocol
 		handlers = self.proto_handlers[proto]
@@ -236,19 +268,19 @@ class L3Device(L2Device):
 			handler(interface, data)
 
 	def ping(self, ip: IP, icmp_id=0, icmp_seq=0, data=None):
-		route = self.find_route(ip)
+		route = self.route_lookup(ip)
 
 		if route is None:
 			return
 
 		packet = IPPacket(
 			dest=ip,
-			source=self.get_interface(route.interface).ip,
+			source=route.interface,
 			protocol=Protocol.ICMP,
 			data=ICMPPacket(ICMPType.ECHO, 0, dict(icmp_id=icmp_id, icmp_seq=icmp_seq), data),
 		)
 
-		self.forward_packet(packet, route)
+		self.forward_packet(route.interface, packet, next_hop=route.gateway)
 
 	@proto_handler(Protocol.ICMP)
 	def handle_icmp(self, interface, icmp: ICMPPacketMeta):
@@ -265,12 +297,12 @@ class L3Device(L2Device):
 				ttl=8,
 			)
 
-			self.forward_packet(ip_packet)
+			self.route_packet(ip_packet)
 
 		elif icmp.icmp.type == ICMPType.ECHO_REPLY:
 			header = icmp.icmp.header
 
-			log.info(
+			log.warning(
 				'%s: ICMP ECHO_REPLY on interface %s from %s icmp_id=%s icmp_seq=%s',
 				self.name, interface.ip, icmp.source,
 				header['icmp_id'], header['icmp_seq']

@@ -3,6 +3,7 @@ from collections import namedtuple
 from address import IP
 
 Route = namedtuple('Route', 'destination netmask gateway interface')
+Forwarding = namedtuple('Forwarding', 'network mask next_hop')
 
 
 class Frame:
@@ -63,12 +64,14 @@ class ARPPacket:
 
 
 class Interface:
-	def __init__(self, port, ip, mask, gateway):
+	def __init__(self, port, ip, mask, gateway, wan, nat):
 		self.port = port
 		self.ip = ip
 		self.mask = mask
 		self.network = IP(ip.value & mask.value)
 		self.gateway = gateway
+		self.wan = wan
+		self.nat = nat
 
 	def __repr__(self):
-		return f'<Interface ip={self.ip} port={self.port}>'
+		return f'<Interface ip={self.ip}>'
